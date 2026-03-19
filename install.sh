@@ -11,8 +11,12 @@ code --install-extension "copy-with-ref-${VERSION}.vsix"
 
 if command -v cursor &>/dev/null; then
   cursor --uninstall-extension "${PUBLISHER}.copy-with-ref" 2>/dev/null || true
-  cursor --install-extension "copy-with-ref-${VERSION}.vsix"
-  echo "Done. Reload VS Code and Cursor windows to take effect."
+  if cursor --install-extension "copy-with-ref-${VERSION}.vsix" 2>/dev/null; then
+    echo "Done. Reload VS Code and Cursor windows to take effect."
+  else
+    echo "Warning: Cursor installation failed (CLI crash), skip."
+    echo "Done. Reload VS Code window to take effect."
+  fi
 else
   echo "Done. Reload VS Code window to take effect."
 fi

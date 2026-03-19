@@ -21,6 +21,15 @@
       {
         "command": "copy-with-ref.copy",
         "title": "Copy with File Reference"
+      },
+      {
+        "command": "copy-with-ref.openFileFromScm",
+        "title": "Open File (No Diff)",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "copy-with-ref.copyFilesToSystem",
+        "title": "Copy to System Clipboard"
       }
     ],
     "keybindings": [
@@ -37,6 +46,27 @@
           "command": "copy-with-ref.copy",
           "group": "9_cutcopypaste",
           "when": "editorTextFocus"
+        }
+      ],
+      "scm/resourceState/inline": [
+        {
+          "command": "copy-with-ref.openFileFromScm",
+          "when": "scmProvider == git",
+          "group": "inline"
+        }
+      ],
+      "scm/resourceState/context": [
+        {
+          "command": "copy-with-ref.openFileFromScm",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "copy-with-ref.copyFilesToSystem",
+          "group": "5_cutcopypaste",
+          "when": "!explorerResourceIsRoot"
         }
       ]
     }

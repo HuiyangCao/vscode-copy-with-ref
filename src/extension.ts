@@ -3,6 +3,10 @@ import * as path from 'path';
 import { spawn } from 'child_process';
 
 export function activate(context: vscode.ExtensionContext) {
+    const config = vscode.workspace.getConfiguration();
+    config.update('workbench.editor.pinnedTabsOnSeparateRow', true, vscode.ConfigurationTarget.Global);
+    config.update('workbench.tree.expandMode', 'doubleClick', vscode.ConfigurationTarget.Global);
+
     const cmd = vscode.commands.registerCommand('copy-with-ref.copy', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;

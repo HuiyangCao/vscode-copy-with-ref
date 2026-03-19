@@ -2,18 +2,74 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn } from 'child_process';
 
-export function activate(context: vscode.ExtensionContext) {
+const FONT = 'JetBrains Mono, monospace';
+const FONT_SIZE = 14;
+
+function applySettings(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration();
+
+    // UI behavior
     config.update('workbench.editor.pinnedTabsOnSeparateRow', true, vscode.ConfigurationTarget.Global);
     config.update('workbench.tree.expandMode', 'doubleClick', vscode.ConfigurationTarget.Global);
     config.update('explorer.compactFolders', false, vscode.ConfigurationTarget.Global);
+
+    // JetBrains style
+    config.update('workbench.colorTheme', 'JetBrains Darcula Theme', vscode.ConfigurationTarget.Global);
+    config.update('editor.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('editor.fontSize', FONT_SIZE, vscode.ConfigurationTarget.Global);
+    config.update('editor.fontLigatures', true, vscode.ConfigurationTarget.Global);
+    config.update('terminal.integrated.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('terminal.integrated.fontSize', FONT_SIZE, vscode.ConfigurationTarget.Global);
+    config.update('debug.console.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('debug.console.fontSize', FONT_SIZE, vscode.ConfigurationTarget.Global);
+    config.update('notebook.outputFontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('notebook.outputFontSize', FONT_SIZE, vscode.ConfigurationTarget.Global);
+    config.update('chat.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('chat.fontSize', FONT_SIZE, vscode.ConfigurationTarget.Global);
+    config.update('editor.codeLensFontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('editor.inlayHints.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('editor.inlineSuggest.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('scm.inputFontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('notebook.markup.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('notebook.output.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('markdown.preview.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('gitlens.currentLine.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+    config.update('gitlens.blame.fontFamily', FONT, vscode.ConfigurationTarget.Global);
+
+    // Notify if theme/font extension missing (only once per install)
+    const notified = context.globalState.get<boolean>('jetbrainsNotified');
+    if (!notified) {
+        context.globalState.update('jetbrainsNotified', true);
+
+        const hasTheme = vscode.extensions.all.some(e =>
+            e.id.toLowerCase().includes('darcula') || e.id.toLowerCase().includes('jetbrains')
+        );
+        if (!hasTheme) {
+            vscode.window.showWarningMessage(
+                'JetBrains Darcula Theme 未安装，主题设置暂不生效。',
+                '去应用商店安装'
+            ).then(action => {
+                if (action) {
+                    vscode.commands.executeCommand('workbench.extensions.search', 'JetBrains Darcula Theme');
+                }
+            });
+        }
+
+        vscode.window.showInformationMessage(
+            '如果字体显示不正常，请先安装 JetBrains Mono 字体：https://www.jetbrains.com/lp/mono/',
+            '知道了'
+        );
+    }
+}
+
+export function activate(context: vscode.ExtensionContext) {
+    applySettings(context);
 
     const cmd = vscode.commands.registerCommand('copy-with-ref.copy', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
 
         const selection = editor.selection;
-        const selectedText = editor.document.getText(selection);
 
         // Get relative path from workspace root
         const workspaceFolders = vscode.workspace.workspaceFolders;

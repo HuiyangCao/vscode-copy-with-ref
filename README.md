@@ -66,7 +66,7 @@ bash ./install.sh   # 不要 sudo
 - 主题：点击提示可跳转到扩展商店搜索 **JetBrains Darcula Theme**
 - 字体：Ubuntu 用户可执行 `sudo apt install fonts-jetbrains-mono`，或访问 [JetBrains Mono 官方下载页](https://www.jetbrains.com/lp/mono/#how-to-install)
 
-### 8. 自定义配置与快捷键
+### 8. 自定义配置与快捷键(vscode 和 cursor同步功能不好用，使用这个扩展就可以跨终端同步vscode和cursor设置了，在新电脑上无需繁琐配置)
 
 插件激活时自动写入用户配置（`settings.json`）和快捷键（`keybindings.json`），只增和改，不删除用户手动添加的内容。
 

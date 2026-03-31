@@ -221,6 +221,7 @@ export function activate(context: vscode.ExtensionContext) {
             // 检查 args 中是否有 ${input:xxx} 变量
             const inputPattern = /\$\{input:([^}]+)\}/;
             const resolvedArgs: string[] = [];
+            const configName = config.name || 'default';
 
             for (const arg of config.args as string[]) {
                 const match = typeof arg === 'string' ? arg.match(inputPattern) : null;
@@ -228,7 +229,7 @@ export function activate(context: vscode.ExtensionContext) {
                     const inputName = match[1];
                     // 查找 launch.json 中对应的 input 定义
                     const inputDef = findInputDefinition(inputName);
-                    const value = await promptForInput(inputDef, inputName);
+                    const value = await promptForInput(context, configName, inputDef, inputName);
                     if (value === undefined) {
                         // 用户按了 ESC，取消调试
                         return undefined;
@@ -264,23 +265,41 @@ function findInputDefinition(inputId: string): { type: string; description?: str
     }
 }
 
-// 根据 input 定义弹出输入框或选择框
+// 根据 input 定义弹出输入框或选择框，并记住上次的值（按启动项+参数名区分）
 async function promptForInput(
+    context: vscode.ExtensionContext,
+    configName: string,
     inputDef: { type: string; description?: string; options?: string[]; default?: string } | undefined,
     inputName: string
 ): Promise<string | undefined> {
+    const stateKey = `debugInput.${configName}.${inputName}`;
+    const lastValue = context.workspaceState.get<string>(stateKey);
+
     if (inputDef?.type === 'pickString' && inputDef.options?.length) {
-        return vscode.window.showQuickPick(inputDef.options, {
+        // 将上次选择的选项排到第一位
+        let options = [...inputDef.options];
+        if (lastValue && options.includes(lastValue)) {
+            options = [lastValue, ...options.filter(o => o !== lastValue)];
+        }
+        const value = await vscode.window.showQuickPick(options, {
             placeHolder: inputDef.description || `选择参数: ${inputName}`,
             ignoreFocusOut: true,
         });
+        if (value !== undefined) {
+            context.workspaceState.update(stateKey, value);
+        }
+        return value;
     }
 
-    return vscode.window.showInputBox({
+    const value = await vscode.window.showInputBox({
         prompt: inputDef?.description || `输入参数: ${inputName}`,
-        value: inputDef?.default || '',
+        value: lastValue ?? inputDef?.default ?? '',
         ignoreFocusOut: true,
     });
+    if (value !== undefined) {
+        context.workspaceState.update(stateKey, value);
+    }
+    return value;
 }
 
 export function deactivate() {}

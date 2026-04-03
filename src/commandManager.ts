@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { EXTENSION_ID } from './constants';
 
 type CommandNode = CategoryNode | CommandItemNode;
 
@@ -44,7 +45,7 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
             const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
             item.iconPath = new vscode.ThemeIcon('file-json');
             item.command = {
-                command: 'copy-with-ref.openCommandConfig',
+                command: `${EXTENSION_ID}.openCommandConfig`,
                 title: 'Edit Config',
                 arguments: [element.filePath],
             };
@@ -53,7 +54,7 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
             const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
             item.iconPath = new vscode.ThemeIcon('run');
             item.command = {
-                command: 'copy-with-ref.runCommand',
+                command: `${EXTENSION_ID}.runCommand`,
                 title: 'Run Command',
                 arguments: [element.categoryName, element],
             };
@@ -203,7 +204,7 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
 
     // Create tree provider
     const provider = new CommandManagerProvider(context.extensionPath, context);
-    const treeView = vscode.window.createTreeView('commandManagerView', {
+    const treeView = vscode.window.createTreeView(`${EXTENSION_ID}_commands`, {
         treeDataProvider: provider,
         showCollapseAll: true,
     });
@@ -211,7 +212,7 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
 
     // Register runCommand
     const runCommandDisposable = vscode.commands.registerCommand(
-        'copy-with-ref.runCommand',
+        `${EXTENSION_ID}.runCommand`,
         async (categoryName: string, cmdItem: CommandItemNode) => {
             try {
                 // Collect parameters
@@ -243,7 +244,7 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
 
     // Register openCommandConfig
     const openConfigDisposable = vscode.commands.registerCommand(
-        'copy-with-ref.openCommandConfig',
+        `${EXTENSION_ID}.openCommandConfig`,
         async (filePath: string) => {
             try {
                 const doc = await vscode.workspace.openTextDocument(filePath);
@@ -256,7 +257,7 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
     disposables.push(openConfigDisposable);
 
     // Register refreshCommands
-    const refreshDisposable = vscode.commands.registerCommand('copy-with-ref.refreshCommands', () => {
+    const refreshDisposable = vscode.commands.registerCommand(`${EXTENSION_ID}.refreshCommands`, () => {
         provider.refresh();
     });
     disposables.push(refreshDisposable);

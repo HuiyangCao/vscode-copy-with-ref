@@ -1,5 +1,5 @@
 {
-  "name": "copy-with-ref",
+  "name": "user-extension",
   "displayName": "一键配置 PyCharm 风格",
   "description": "一键配置 PyCharm 风格的 VS Code 环境：Darcula 主题、JetBrains Mono 字体、文件树优化、快捷键绑定、文件引用复制等。",
   "version": "0.0.1",
@@ -19,40 +19,40 @@
   "contributes": {
     "commands": [
       {
-        "command": "copy-with-ref.copy",
+        "command": "user_extension.copy",
         "title": "Copy with File Reference"
       },
 {
-        "command": "copy-with-ref.copyFilesToSystem",
+        "command": "user_extension.copyFilesToSystem",
         "title": "Copy to System Clipboard"
       },
       {
-        "command": "copy-with-ref.copyFileName",
+        "command": "user_extension.copyFileName",
         "title": "Copy File Name"
       },
       {
-        "command": "copy-with-ref.revealFolderInExplorer",
+        "command": "user_extension.revealFolderInExplorer",
         "title": "Reveal Folder in Explorer"
       },
       {
-        "command": "copy-with-ref.killPythonDebug",
+        "command": "user_extension.killPythonDebug",
         "title": "Kill All Python Debug",
         "icon": "$(close)"
       },
       {
-        "command": "copy-with-ref.addFavoriteFolder",
+        "command": "user_extension.addFavoriteFolder",
         "title": "Add to Favorite Folders"
       },
       {
-        "command": "copy-with-ref.runCommand",
+        "command": "user_extension.runCommand",
         "title": "Run Command"
       },
       {
-        "command": "copy-with-ref.openCommandConfig",
+        "command": "user_extension.openCommandConfig",
         "title": "Edit Config"
       },
       {
-        "command": "copy-with-ref.refreshCommands",
+        "command": "user_extension.refreshCommands",
         "title": "Refresh Commands",
         "icon": "$(refresh)"
       }
@@ -61,16 +61,16 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "commandManagerContainer",
-          "title": "Command Manager",
+          "id": "user_extension",
+          "title": "user_extension",
           "icon": "$(terminal-view-icon)"
         }
       ]
     },
     "views": {
-      "commandManagerContainer": [
+      "user_extension": [
         {
-          "id": "commandManagerView",
+          "id": "user_extension_commands",
           "name": "Commands"
         }
       ]
@@ -78,37 +78,37 @@
     "menus": {
       "view/title": [
         {
-          "command": "copy-with-ref.refreshCommands",
-          "when": "view == commandManagerView",
+          "command": "user_extension.refreshCommands",
+          "when": "view == user_extension_commands",
           "group": "navigation"
         }
       ],
       "debug/toolBar": [
         {
-          "command": "copy-with-ref.killPythonDebug",
+          "command": "user_extension.killPythonDebug",
           "when": "inDebugMode"
         }
       ],
       "editor/context": [
         {
-          "command": "copy-with-ref.copy",
+          "command": "user_extension.copy",
           "group": "9_cutcopypaste",
           "when": "editorTextFocus"
         }
       ],
 "explorer/context": [
         {
-          "command": "copy-with-ref.copyFilesToSystem",
+          "command": "user_extension.copyFilesToSystem",
           "group": "5_cutcopypaste",
           "when": "!explorerResourceIsRoot"
         },
         {
-          "command": "copy-with-ref.copyFileName",
+          "command": "user_extension.copyFileName",
           "group": "5_cutcopypaste",
           "when": "!explorerResourceIsRoot"
         },
         {
-          "command": "copy-with-ref.addFavoriteFolder",
+          "command": "user_extension.addFavoriteFolder",
           "group": "navigation",
           "when": "explorerResourceIsFolder"
         }

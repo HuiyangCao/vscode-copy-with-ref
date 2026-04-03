@@ -2,9 +2,10 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
+import { EXTENSION_ID } from './constants';
 
 export function registerCopyWithRefCommand(context: vscode.ExtensionContext) {
-    return vscode.commands.registerCommand('copy-with-ref.copy', async () => {
+    return vscode.commands.registerCommand(`${EXTENSION_ID}.copy`, async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) return;
 
@@ -30,7 +31,7 @@ export function registerCopyWithRefCommand(context: vscode.ExtensionContext) {
 
 export function registerCopyFilesToSystemCommand() {
     return vscode.commands.registerCommand(
-        'copy-with-ref.copyFilesToSystem',
+        `${EXTENSION_ID}.copyFilesToSystem`,
         async (uri: vscode.Uri, uris: vscode.Uri[]) => {
             const targets = uris?.length ? uris : (uri ? [uri] : []);
             if (!targets.length) return;
@@ -54,7 +55,7 @@ export function registerCopyFilesToSystemCommand() {
 
 export function registerAddFavoriteFolderCommand(context: vscode.ExtensionContext) {
     return vscode.commands.registerCommand(
-        'copy-with-ref.addFavoriteFolder',
+        `${EXTENSION_ID}.addFavoriteFolder`,
         async (uri: vscode.Uri) => {
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders) return;
@@ -79,7 +80,7 @@ export function registerAddFavoriteFolderCommand(context: vscode.ExtensionContex
 
 export function registerRevealFolderCommand(context: vscode.ExtensionContext) {
     return vscode.commands.registerCommand(
-        'copy-with-ref.revealFolderInExplorer',
+        `${EXTENSION_ID}.revealFolderInExplorer`,
         async () => {
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders) return;
@@ -138,7 +139,7 @@ export function registerRevealFolderCommand(context: vscode.ExtensionContext) {
 
 export function registerCopyFileNameCommand() {
     return vscode.commands.registerCommand(
-        'copy-with-ref.copyFileName',
+        `${EXTENSION_ID}.copyFileName`,
         async (uri: vscode.Uri) => {
             if (!uri) return;
             const fileName = path.basename(uri.fsPath);
@@ -149,7 +150,7 @@ export function registerCopyFileNameCommand() {
 }
 
 export function registerKillPythonDebugCommand() {
-    return vscode.commands.registerCommand('copy-with-ref.killPythonDebug', () => {
+    return vscode.commands.registerCommand(`${EXTENSION_ID}.killPythonDebug`, () => {
         const proc = spawn('sudo', ['pkill', '-9', '-f', 'python.*debug'], { stdio: 'ignore' });
         proc.on('close', (code) => {
             if (code === 0) {

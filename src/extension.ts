@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { loadConfig, applySettings, applyUserKeybindings, resetSettings } from './config';
+import { loadConfig, applyBaseSettings, applySettings, applyUserKeybindings, resetSettings } from './config';
 import {
     registerCopyWithRefCommand,
     registerCopyFilesToSystemCommand,
@@ -32,6 +32,8 @@ export function activate(context: vscode.ExtensionContext) {
     })();
 
     const cfg = loadConfig(context.extensionPath);
+    // Base settings always apply (default after install), independent of the JetBrains toggle.
+    applyBaseSettings(cfg.baseSettings);
     if (shouldApplyJetbrainsPreset) {
         applySettings(context, cfg.settings);
     } else {

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 export interface ExtConfig {
+    baseSettings: Record<string, unknown>;
     settings: Record<string, unknown>;
     keybindings: Record<string, unknown>[];
 }
@@ -48,6 +49,14 @@ export function applyUserKeybindings(context: vscode.ExtensionContext, keybindin
 
     const lines = existing.map(e => `    ${JSON.stringify(e)}`).join(',\n');
     fs.writeFileSync(kbPath, `[\n${lines}\n]\n`);
+}
+
+export function applyBaseSettings(settings: Record<string, unknown>) {
+    const config = vscode.workspace.getConfiguration();
+
+    for (const [key, value] of Object.entries(settings)) {
+        config.update(key, value, vscode.ConfigurationTarget.Global);
+    }
 }
 
 export function applySettings(context: vscode.ExtensionContext, settings: Record<string, unknown>) {

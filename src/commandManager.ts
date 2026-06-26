@@ -3,12 +3,31 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { EXTENSION_ID } from './constants';
 
-type CommandNode = CategoryNode | CommandItemNode;
+// 打包后的 vsix 不含 node_modules，所以内置 js-yaml 的自包含 UMD 包并按相对路径加载；
+// 开发态（Extension Development Host）下回退到 node_modules 的 js-yaml。
+function loadYaml(): any {
+    const candidates = [
+        path.join(__dirname, '..', 'other_files', 'vendor', 'js-yaml.min.js'),
+        'js-yaml',
+    ];
+    for (const c of candidates) {
+        try {
+            return require(c);
+        } catch {
+            // 尝试下一个候选路径
+        }
+    }
+    throw new Error('无法加载 js-yaml 解析库');
+}
+const yaml = loadYaml();
 
-interface CategoryNode {
-    kind: 'category';
+type CommandNode = GroupNode | CommandItemNode | PlaceholderNode;
+
+interface GroupNode {
+    kind: 'group';
     name: string;
-    filePath: string;
+    commands: any[];
+    docParameters: Record<string, any>;
 }
 
 interface CommandItemNode {
@@ -16,9 +35,13 @@ interface CommandItemNode {
     name: string;
     command: string;
     parameters?: Record<string, any>;
-    parameter_refs?: string[];
-    categoryName: string;
-    categoryData: any;
+    docParameters: Record<string, any>;
+}
+
+interface PlaceholderNode {
+    kind: 'placeholder';
+    name: string;
+    actionCommand?: string;
 }
 
 interface Parameter {
@@ -34,41 +57,54 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
     readonly onDidChangeTreeData: vscode.Event<CommandNode | undefined | null | void> =
         this._onDidChangeTreeData.event;
 
-    private fileWatchers: vscode.FileSystemWatcher[] = [];
+    private fileWatcher: vscode.FileSystemWatcher | undefined;
 
-    private get configDirs(): string[] {
-        const userConfigDir = path.join(process.env.HOME || '', '.config', 'trainning_extension', 'command_config');
-        // const extConfigDir = path.join(this.extensionPath, 'command_config');
-        return [userConfigDir];
+    /** 全局命令目录：每个工程一个 yaml 文件。 */
+    get commandDir(): string {
+        return path.join(process.env.HOME || '', '.config', 'trainning_extension', 'command');
     }
 
-    constructor(private extensionPath: string, private context: vscode.ExtensionContext) {
+    /** 当前工程名 = 第一个工作区文件夹的名字。 */
+    get projectName(): string | undefined {
+        const folders = vscode.workspace.workspaceFolders;
+        if (!folders || folders.length === 0) return undefined;
+        return path.basename(folders[0].uri.fsPath);
+    }
+
+    /** 当前工程对应的命令文件路径。 */
+    get projectFilePath(): string | undefined {
+        const name = this.projectName;
+        if (!name) return undefined;
+        return path.join(this.commandDir, `${name}.yaml`);
+    }
+
+    constructor() {
+        try {
+            if (!fs.existsSync(this.commandDir)) {
+                fs.mkdirSync(this.commandDir, { recursive: true });
+            }
+        } catch (e) {
+            console.error('[CommandManager] failed to ensure command dir:', e);
+        }
         this.setupFileWatcher();
     }
 
     private setupFileWatcher(): void {
-        for (const configDir of this.configDirs) {
-            try {
-                if (!fs.existsSync(configDir)) continue;
-                const pattern = new vscode.RelativePattern(configDir, '*.json');
-                const watcher = vscode.workspace.createFileSystemWatcher(pattern);
-
-                watcher.onDidChange(() => this.refresh());
-                watcher.onDidCreate(() => this.refresh());
-                watcher.onDidDelete(() => this.refresh());
-
-                this.fileWatchers.push(watcher);
-            } catch (error) {
-                console.error(`Failed to setup file watcher for ${configDir}:`, error);
-            }
+        try {
+            const pattern = new vscode.RelativePattern(this.commandDir, '*.yaml');
+            const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+            watcher.onDidChange(() => this.refresh());
+            watcher.onDidCreate(() => this.refresh());
+            watcher.onDidDelete(() => this.refresh());
+            this.fileWatcher = watcher;
+        } catch (error) {
+            console.error('[CommandManager] failed to setup file watcher:', error);
         }
     }
 
     dispose(): void {
-        for (const watcher of this.fileWatchers) {
-            watcher.dispose();
-        }
-        this.fileWatchers = [];
+        this.fileWatcher?.dispose();
+        this.fileWatcher = undefined;
         this._onDidChangeTreeData.dispose();
     }
 
@@ -76,14 +112,39 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
         this._onDidChangeTreeData.fire();
     }
 
+    private loadDoc(): any | undefined {
+        const fp = this.projectFilePath;
+        if (!fp || !fs.existsSync(fp)) return undefined;
+        try {
+            return yaml.load(fs.readFileSync(fp, 'utf-8')) || {};
+        } catch (e) {
+            vscode.window.showErrorMessage(`解析命令配置失败 ${path.basename(fp)}: ${e}`);
+            return undefined;
+        }
+    }
+
+    private toCommandNode(cmd: any, docParameters: Record<string, any>): CommandItemNode {
+        return {
+            kind: 'command',
+            name: cmd?.name ?? '(未命名)',
+            command: cmd?.command ?? '',
+            parameters: cmd?.parameters,
+            docParameters,
+        };
+    }
+
     getTreeItem(element: CommandNode): vscode.TreeItem {
-        if (element.kind === 'category') {
-            const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Collapsed);
-            item.iconPath = new vscode.ThemeIcon('file-json');
-            // 移除双击编辑逻辑，改用按钮触发
-            item.contextValue = 'category';
-            // 保存完整的 element 对象用于菜单传递
-            (item as any).element = element;
+        if (element.kind === 'group') {
+            const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Expanded);
+            item.iconPath = new vscode.ThemeIcon('folder');
+            item.contextValue = 'group';
+            return item;
+        } else if (element.kind === 'placeholder') {
+            const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
+            item.iconPath = new vscode.ThemeIcon('info');
+            if (element.actionCommand) {
+                item.command = { command: element.actionCommand, title: element.name };
+            }
             return item;
         } else {
             const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
@@ -92,7 +153,7 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
             item.command = {
                 command: `${EXTENSION_ID}.runCommand`,
                 title: 'Run Command',
-                arguments: [element.categoryName, element],
+                arguments: [this.projectName, element],
             };
             return item;
         }
@@ -100,54 +161,49 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
 
     async getChildren(element?: CommandNode): Promise<CommandNode[]> {
         if (!element) {
-            // Root: list all JSON categories
-            return this.getCategories();
-        } else if (element.kind === 'category') {
-            // Category: list commands
-            try {
-                const data = JSON.parse(fs.readFileSync(element.filePath, 'utf-8'));
-                const commands = data.commands || [];
-                return commands.map((cmd: any) => ({
-                    kind: 'command',
-                    name: cmd.name,
-                    command: cmd.command,
-                    parameters: cmd.parameters,
-                    parameter_refs: cmd.parameter_refs,
-                    categoryName: element.name,
-                    categoryData: data,
-                } as CommandItemNode));
-            } catch (e) {
-                vscode.window.showErrorMessage(`Failed to read ${element.filePath}: ${e}`);
-                return [];
+            const name = this.projectName;
+            if (!name) {
+                return [{ kind: 'placeholder', name: '未打开工作区文件夹' }];
             }
-        }
-        return [];
-    }
+            const fp = this.projectFilePath!;
+            if (!fs.existsSync(fp)) {
+                return [{
+                    kind: 'placeholder',
+                    name: `点击为工程「${name}」新建命令配置`,
+                    actionCommand: `${EXTENSION_ID}.newCommandConfig`,
+                }];
+            }
 
-    private getCategories(): CategoryNode[] {
-        console.log('[CommandManager] configDirs:', this.configDirs)
-        const categories: CategoryNode[] = [];
-        const seen = new Set<string>();
+            const doc = this.loadDoc() || {};
+            const docParams: Record<string, any> = doc.parameters || {};
+            const nodes: CommandNode[] = [];
 
-        for (const configDir of this.configDirs) {
-            if (!fs.existsSync(configDir)) continue;
-
-            const files = fs.readdirSync(configDir);
-            for (const f of files) {
-                if (!f.endsWith('.json') || f.startsWith('_')) continue;
-                const name = path.basename(f, '.json');
-                if (seen.has(name)) continue;
-
-                seen.add(name);
-                categories.push({
-                    kind: 'category' as const,
-                    name,
-                    filePath: path.join(configDir, f),
+            // 顶层未分组命令
+            for (const cmd of (doc.commands || [])) {
+                nodes.push(this.toCommandNode(cmd, docParams));
+            }
+            // 分组
+            for (const g of (doc.groups || [])) {
+                nodes.push({
+                    kind: 'group',
+                    name: g?.name ?? '(未命名分组)',
+                    commands: g?.commands || [],
+                    docParameters: docParams,
                 });
             }
-        }
 
-        return categories;
+            if (nodes.length === 0) {
+                return [{
+                    kind: 'placeholder',
+                    name: '配置为空，点击编辑',
+                    actionCommand: `${EXTENSION_ID}.openCommandConfig`,
+                }];
+            }
+            return nodes;
+        } else if (element.kind === 'group') {
+            return element.commands.map((cmd) => this.toCommandNode(cmd, element.docParameters));
+        }
+        return [];
     }
 }
 
@@ -172,23 +228,21 @@ function extractParamNames(command: string): string[] {
 }
 
 async function collectParameters(
-    categoryData: any,
     cmdItem: CommandItemNode,
     context: vscode.ExtensionContext,
-    categoryName: string
+    projectName: string
 ): Promise<Record<string, string> | undefined> {
     const result: Record<string, string> = {};
 
-    // 合并参数定义：全局 parameters + 命令内联 parameters
+    // 合并参数定义：工程级 parameters + 命令内联 parameters
     const paramDefs: Record<string, Parameter> = {
-        ...(categoryData.parameters || {}),
+        ...(cmdItem.docParameters || {}),
         ...(cmdItem.parameters || {}),
     };
 
     // 从命令字符串中自动扫描需要的参数
     const paramNames = extractParamNames(cmdItem.command);
 
-    // Collect each parameter
     for (const paramName of paramNames) {
         const paramDef = paramDefs[paramName];
         if (!paramDef) {
@@ -196,7 +250,7 @@ async function collectParameters(
             continue;
         }
 
-        const stateKey = `cmdmgr.${categoryName}.${paramName}`;
+        const stateKey = `cmdmgr.${projectName}.${paramName}`;
         const lastValue = context.workspaceState.get<string>(stateKey);
 
         let value: string | undefined;
@@ -235,7 +289,6 @@ async function collectParameters(
             continue;
         }
 
-        // 保存到 workspaceState
         await context.workspaceState.update(stateKey, value);
         result[paramName] = value!;
     }
@@ -248,22 +301,18 @@ async function collectParameters(
  * - 普通参数：直接替换值
  * - 转义 \{...\} 还原为字面量 {...}
  */
-function buildTerminalCommand(
-    command: string,
-    params: Record<string, string>,
-    _paramDefs: Record<string, Parameter>
-): string {
+function buildTerminalCommand(command: string, params: Record<string, string>): string {
     let finalCmd = command;
 
     for (const [key, value] of Object.entries(params)) {
-        // 普通参数：直接替换值
         finalCmd = finalCmd.replace(new RegExp(`(?<!\\\\)\\{${key}\\}`, 'g'), value);
     }
 
     // 还原转义的 \{...\} 为字面量 {...}
     finalCmd = finalCmd.replace(/\\\{/g, '{').replace(/\\\}/g, '}');
 
-    return finalCmd;
+    // 去掉 YAML 块标量带来的尾部空行，避免多发一个回车
+    return finalCmd.replace(/\s+$/, '');
 }
 
 function getOrCreateRunTerminal(name: string): vscode.Terminal {
@@ -280,71 +329,66 @@ function getOrCreateRunTerminal(name: string): vscode.Terminal {
     return vscode.window.createTerminal({ name });
 }
 
-function resolveCategoryFilePath(context: vscode.ExtensionContext, element?: any): string | undefined {
-    if (typeof element === 'string') {
-        return element;
-    }
+function readTemplate(extensionPath: string): string {
+    const templatePath = path.join(extensionPath, 'other_files', 'template_commands.yaml');
+    const minimalFallback = [
+        '# 本工程命令配置（YAML，支持多行命令与注释）',
+        'parameters: {}',
+        'commands: []',
+        'groups: []',
+        '',
+    ].join('\n');
 
-    if (element && 'kind' in element && element.kind === 'category') {
-        return element.filePath;
+    let content: string;
+    if (fs.existsSync(templatePath)) {
+        content = fs.readFileSync(templatePath, 'utf-8');
+        try {
+            yaml.load(content);
+        } catch (e) {
+            vscode.window.showWarningMessage(
+                `template_commands.yaml 不是合法 YAML (${e})，已创建空配置。`
+            );
+            content = minimalFallback;
+        }
+    } else {
+        content = minimalFallback;
     }
-
-    const lastSelected = (context as any).lastSelectedCommandElement;
-    if (lastSelected && 'kind' in lastSelected && lastSelected.kind === 'category') {
-        return lastSelected.filePath;
-    }
-
-    return undefined;
+    if (!content.endsWith('\n')) content += '\n';
+    return content;
 }
 
 export function registerCommandManagerView(context: vscode.ExtensionContext): vscode.Disposable[] {
     const disposables: vscode.Disposable[] = [];
 
-    // Create tree provider
-    const provider = new CommandManagerProvider(context.extensionPath, context);
+    const provider = new CommandManagerProvider();
     const treeView = vscode.window.createTreeView(`${EXTENSION_ID}_commands`, {
         treeDataProvider: provider,
         showCollapseAll: true,
     });
     disposables.push(treeView);
 
-    // 为树视图元素解析器设置，使菜单可以正确获取元素信息
-    const treeSelectDisposable = treeView.onDidChangeSelection((event) => {
-        if (event.selection.length > 0) {
-            const element = event.selection[0];
-            // 保存最后右键点击的元素
-            (context as any).lastSelectedCommandElement = element;
-        }
-    });
-    disposables.push(treeSelectDisposable);
+    // 切换工作区文件夹时刷新（换工程 -> 换命令）
+    disposables.push(
+        vscode.workspace.onDidChangeWorkspaceFolders(() => provider.refresh())
+    );
 
-    // Register runCommand
-    const runCommandDisposable = vscode.commands.registerCommand(
+    // 运行命令
+    disposables.push(vscode.commands.registerCommand(
         `${EXTENSION_ID}.runCommand`,
-        async (categoryName: string, cmdItem: CommandItemNode) => {
+        async (projectName: string | undefined, cmdItem: CommandItemNode) => {
             try {
-                // Collect parameters
-                const params = await collectParameters(
-                    cmdItem.categoryData,
-                    cmdItem,
-                    context,
-                    categoryName
-                );
-
-                if (params === undefined) {
-                    // User cancelled
+                if (!projectName) {
+                    vscode.window.showErrorMessage('未打开工作区文件夹');
                     return;
                 }
-
-                // 合并参数定义
-                const paramDefs: Record<string, Parameter> = {
-                    ...(cmdItem.categoryData.parameters || {}),
-                    ...(cmdItem.parameters || {}),
-                };
-
-                // 构建终端命令
-                const finalCmd = buildTerminalCommand(cmdItem.command, params, paramDefs);
-
+                const params = await collectParameters(cmdItem, context, projectName);
+                if (params === undefined) {
+                    return; // 用户取消
+                }
+                const finalCmd = buildTerminalCommand(cmdItem.command, params);
+                if (!finalCmd) {
+                    return;
+                }
                 const terminal = getOrCreateRunTerminal(cmdItem.name?.trim() || 'Command Manager');
                 terminal.show(true);
                 terminal.sendText(finalCmd, true);
@@ -352,160 +396,90 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
                 vscode.window.showErrorMessage(`Error running command: ${e}`);
             }
         }
-    );
-    disposables.push(runCommandDisposable);
+    ));
 
-    // Register openCommandConfig
-    const openConfigDisposable = vscode.commands.registerCommand(
+    // 编辑当前工程命令配置
+    disposables.push(vscode.commands.registerCommand(
         `${EXTENSION_ID}.openCommandConfig`,
-        async (element?: any) => {
+        async () => {
             try {
-                const filePath = resolveCategoryFilePath(context, element);
-
-                if (!filePath) {
-                    vscode.window.showErrorMessage('Unable to determine config file path');
+                const fp = provider.projectFilePath;
+                if (!fp) {
+                    vscode.window.showErrorMessage('请先打开一个工程文件夹');
                     return;
                 }
-
-                const doc = await vscode.workspace.openTextDocument(filePath);
+                if (!fs.existsSync(fp)) {
+                    await vscode.commands.executeCommand(`${EXTENSION_ID}.newCommandConfig`);
+                    return;
+                }
+                const doc = await vscode.workspace.openTextDocument(fp);
                 await vscode.window.showTextDocument(doc);
             } catch (e) {
                 vscode.window.showErrorMessage(`Failed to open config file: ${e}`);
             }
         }
-    );
-    disposables.push(openConfigDisposable);
+    ));
 
-    // Register refreshCommands
-    const refreshDisposable = vscode.commands.registerCommand(`${EXTENSION_ID}.refreshCommands`, () => {
+    // 刷新
+    disposables.push(vscode.commands.registerCommand(`${EXTENSION_ID}.refreshCommands`, () => {
         provider.refresh();
-    });
-    disposables.push(refreshDisposable);
+    }));
 
-    // Register newCommandConfig
-    const newConfigDisposable = vscode.commands.registerCommand(
+    // 为当前工程新建命令配置
+    disposables.push(vscode.commands.registerCommand(
         `${EXTENSION_ID}.newCommandConfig`,
         async () => {
             try {
-                const configDir = path.join(
-                    process.env.HOME || '',
-                    '.config',
-                    'trainning_extension',
-                    'command_config'
-                );
-
-                if (!fs.existsSync(configDir)) {
-                    fs.mkdirSync(configDir, { recursive: true });
-                }
-
-                const name = await vscode.window.showInputBox({
-                    prompt: 'Enter command config name',
-                    placeHolder: 'e.g., deploy, build, test',
-                    ignoreFocusOut: true,
-                    validateInput: (value: string) => {
-                        if (!value || value.trim().length === 0) {
-                            return 'Name cannot be empty';
-                        }
-                        if (value.startsWith('_')) {
-                            return 'Name cannot start with underscore';
-                        }
-                        if (!/^[a-zA-Z0-9_-]+$/.test(value)) {
-                            return 'Name can only contain letters, numbers, hyphens, and underscores';
-                        }
-                        const filePath = path.join(configDir, `${value}.json`);
-                        if (fs.existsSync(filePath)) {
-                            return `Config '${value}' already exists`;
-                        }
-                        return null;
-                    },
-                });
-
-                if (!name) {
+                const fp = provider.projectFilePath;
+                const projectName = provider.projectName;
+                if (!fp || !projectName) {
+                    vscode.window.showErrorMessage('请先打开一个工程文件夹');
                     return;
                 }
-
-                const templatePath = path.join(
-                    context.extensionPath,
-                    'other_files',
-                    'template_commands.json'
-                );
-                const minimalFallback =
-                    JSON.stringify({ parameters: {}, commands: [] }, null, 2) + '\n';
-                let fileContent: string;
-                if (fs.existsSync(templatePath)) {
-                    fileContent = fs.readFileSync(templatePath, 'utf-8');
-                    try {
-                        JSON.parse(fileContent);
-                    } catch (e) {
-                        vscode.window.showWarningMessage(
-                            `template_commands.json is invalid JSON (${e}); created empty config instead.`
-                        );
-                        fileContent = minimalFallback;
-                    }
-                } else {
-                    vscode.window.showWarningMessage(
-                        `Template not found (expected bundled other_files/template_commands.json); created empty config.`
-                    );
-                    fileContent = minimalFallback;
+                if (!fs.existsSync(provider.commandDir)) {
+                    fs.mkdirSync(provider.commandDir, { recursive: true });
                 }
-                if (!fileContent.endsWith('\n')) {
-                    fileContent += '\n';
+                if (!fs.existsSync(fp)) {
+                    fs.writeFileSync(fp, readTemplate(context.extensionPath), 'utf-8');
+                    provider.refresh();
+                    vscode.window.showInformationMessage(`已为工程「${projectName}」创建命令配置`);
                 }
-
-                const filePath = path.join(configDir, `${name}.json`);
-                fs.writeFileSync(filePath, fileContent, 'utf-8');
-
-                provider.refresh();
-
-                const doc = await vscode.workspace.openTextDocument(filePath);
+                const doc = await vscode.workspace.openTextDocument(fp);
                 await vscode.window.showTextDocument(doc);
-
-                vscode.window.showInformationMessage(`Created command config: ${name}.json`);
             } catch (e) {
                 vscode.window.showErrorMessage(`Failed to create command config: ${e}`);
             }
         }
-    );
-    disposables.push(newConfigDisposable);
+    ));
 
-    // Register deleteCommandConfig
-    const deleteConfigDisposable = vscode.commands.registerCommand(
+    // 删除当前工程命令配置
+    disposables.push(vscode.commands.registerCommand(
         `${EXTENSION_ID}.deleteCommandConfig`,
-        async (element?: any) => {
+        async () => {
             try {
-                const filePath = resolveCategoryFilePath(context, element);
-                if (!filePath) {
-                    vscode.window.showErrorMessage('Unable to determine config file path');
+                const fp = provider.projectFilePath;
+                if (!fp || !fs.existsSync(fp)) {
+                    vscode.window.showWarningMessage('当前工程没有命令配置文件');
                     return;
                 }
-
-                const fileName = path.basename(filePath);
-                if (!fs.existsSync(filePath)) {
-                    vscode.window.showWarningMessage(`Config file not found: ${fileName}`);
-                    provider.refresh();
-                    return;
-                }
-
+                const fileName = path.basename(fp);
                 const confirm = await vscode.window.showWarningMessage(
-                    `Delete command config "${fileName}"? This action cannot be undone.`,
+                    `删除命令配置「${fileName}」？此操作不可撤销。`,
                     { modal: true },
                     'Delete'
                 );
                 if (confirm !== 'Delete') {
                     return;
                 }
-
-                fs.unlinkSync(filePath);
+                fs.unlinkSync(fp);
                 provider.refresh();
-                vscode.window.showInformationMessage(`Deleted command config: ${fileName}`);
+                vscode.window.showInformationMessage(`已删除命令配置：${fileName}`);
             } catch (e) {
                 vscode.window.showErrorMessage(`Failed to delete config file: ${e}`);
             }
         }
-    );
-    disposables.push(deleteConfigDisposable);
+    ));
 
-    // Add provider disposal
     disposables.push(new vscode.Disposable(() => provider.dispose()));
 
     return disposables;

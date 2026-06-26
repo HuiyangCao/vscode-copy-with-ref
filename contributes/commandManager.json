@@ -47,24 +47,22 @@
       {
         "command": "trainning_extension.newCommandConfig",
         "when": "view == trainning_extension_commands",
-        "group": "navigation"
+        "group": "navigation@1"
+      },
+      {
+        "command": "trainning_extension.openCommandConfig",
+        "when": "view == trainning_extension_commands",
+        "group": "navigation@2"
       },
       {
         "command": "trainning_extension.refreshCommands",
         "when": "view == trainning_extension_commands",
-        "group": "navigation"
-      }
-    ],
-    "view/item/context": [
-      {
-        "command": "trainning_extension.openCommandConfig",
-        "when": "view == trainning_extension_commands && viewItem == category",
-        "group": "inline@1"
+        "group": "navigation@3"
       },
       {
         "command": "trainning_extension.deleteCommandConfig",
-        "when": "view == trainning_extension_commands && viewItem == category",
-        "group": "inline@2"
+        "when": "view == trainning_extension_commands",
+        "group": "navigation@4"
       }
     ]
   }

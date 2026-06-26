@@ -1,0 +1,36 @@
+# 本工程命令配置（YAML，支持多行命令与注释）
+# - 用 {参数名} 在命令里引用参数，运行时会提示输入/选择。
+# - 想写字面量花括号请转义：\{ \}
+# - 多行命令用 | 开头，行尾加 \ 让 bash 续行。
+
+# 工程级参数：所有命令共享
+parameters:
+  gpu_ids:
+    type: select          # select=下拉选择；string=手动输入
+    prompt: 请选择一个 GPU
+    options: ["0", "1", "2", "3"]
+
+# 顶层命令（不分组，直接显示）
+commands:
+  - name: NVIDIA SMI
+    command: nvidia-smi
+
+# 命令分组（在树里可折叠）
+groups:
+  - name: 训练
+    commands:
+      - name: 多行训练示例
+        command: |
+          CUDA_VISIBLE_DEVICES={gpu_ids} \
+            uv run train task \
+            --env.scene.num-envs 4096 \
+            --max-iterations 1000
+
+  - name: 同步
+    commands:
+      - name: 本地到服务器
+        command: |
+          rsync -avz --delete \
+            --exclude='.venv/' \
+            --exclude='logs/' \
+            ./ ssh_server:/home/user/project/

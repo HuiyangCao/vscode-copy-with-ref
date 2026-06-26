@@ -1,6 +1,9 @@
 {
-    "settings": {
+    "baseSettings": {
         "workbench.editor.pinnedTabsOnSeparateRow": true,
+        "workbench.editor.wrapTabs": true
+    },
+    "settings": {
         "workbench.tree.expandMode": "doubleClick",
         "explorer.compactFolders": false,
         "workbench.list.openMode": "doubleClick",

@@ -25,6 +25,8 @@ function activate(context) {
         }
     })();
     const cfg = (0, config_1.loadConfig)(context.extensionPath);
+    // Base settings always apply (default after install), independent of the JetBrains toggle.
+    (0, config_1.applyBaseSettings)(cfg.baseSettings);
     if (shouldApplyJetbrainsPreset) {
         (0, config_1.applySettings)(context, cfg.settings);
     }

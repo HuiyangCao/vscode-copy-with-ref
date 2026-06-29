@@ -53,6 +53,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "trainning_extension.editCommand",
+        "title": "Edit Command",
+        "icon": "$(edit)"
+      },
+      {
         "command": "trainning_extension.copy",
         "title": "Copy with File Reference"
       },
@@ -150,6 +155,11 @@
         "command": "trainning_extension.setSshStartCommand",
         "title": "Set SSH Startup Command",
         "icon": "$(gear)"
+      },
+      {
+        "command": "trainning_extension.editSshHost",
+        "title": "Edit in SSH Config",
+        "icon": "$(edit)"
       },
       {
         "command": "trainning_extension.addBookmark",
@@ -275,47 +285,17 @@
           "group": "navigation"
         }
       ],
-      "debug/toolBar": [
-        {
-          "command": "trainning_extension.killPythonDebug",
-          "when": "inDebugMode"
-        }
-      ],
-      "editor/context": [
-        {
-          "command": "trainning_extension.copy",
-          "group": "9_cutcopypaste",
-          "when": "editorTextFocus"
-        },
-        {
-          "command": "trainning_extension.stageSelectedLines",
-          "group": "2_git@1",
-          "when": "editorTextFocus && !editorReadonly && resourceScheme == file"
-        }
-      ],
-      "explorer/context": [
-        {
-          "command": "trainning_extension.copyFilesToSystem",
-          "group": "5_cutcopypaste",
-          "when": "!explorerResourceIsRoot"
-        },
-        {
-          "command": "trainning_extension.copyFileName",
-          "group": "5_cutcopypaste",
-          "when": "!explorerResourceIsRoot"
-        },
-        {
-          "command": "trainning_extension.addFavoriteFolder",
-          "group": "navigation",
-          "when": "explorerResourceIsFolder"
-        },
-        {
-          "command": "trainning_extension.deleteModelFiles",
-          "group": "navigation",
-          "when": "explorerResourceIsFolder"
-        }
-      ],
       "view/item/context": [
+        {
+          "command": "trainning_extension.editCommand",
+          "when": "view == trainning_extension_commands && viewItem == command",
+          "group": "inline@1"
+        },
+        {
+          "command": "trainning_extension.editCommand",
+          "when": "view == trainning_extension_commands && viewItem == command",
+          "group": "navigation@1"
+        },
         {
           "command": "trainning_extension.copyOnnxFiles",
           "when": "view == trainning_extension_logs && viewItem == runFile",
@@ -462,6 +442,16 @@
           "group": "inline@5"
         },
         {
+          "command": "trainning_extension.editSshHost",
+          "when": "view == trainning_extension_ssh && viewItem == sshHost",
+          "group": "inline@7"
+        },
+        {
+          "command": "trainning_extension.editSshHost",
+          "when": "view == trainning_extension_ssh && viewItem == sshHost",
+          "group": "navigation@3"
+        },
+        {
           "command": "trainning_extension.copySshIp",
           "when": "view == trainning_extension_ssh && viewItem == sshHost",
           "group": "navigation@1"
@@ -475,6 +465,46 @@
           "command": "trainning_extension.removeBookmark",
           "when": "view == trainning_extension_web && viewItem == bookmarkItem",
           "group": "inline"
+        }
+      ],
+      "debug/toolBar": [
+        {
+          "command": "trainning_extension.killPythonDebug",
+          "when": "inDebugMode"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "trainning_extension.copy",
+          "group": "9_cutcopypaste",
+          "when": "editorTextFocus"
+        },
+        {
+          "command": "trainning_extension.stageSelectedLines",
+          "group": "2_git@1",
+          "when": "editorTextFocus && !editorReadonly && resourceScheme == file"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "trainning_extension.copyFilesToSystem",
+          "group": "5_cutcopypaste",
+          "when": "!explorerResourceIsRoot"
+        },
+        {
+          "command": "trainning_extension.copyFileName",
+          "group": "5_cutcopypaste",
+          "when": "!explorerResourceIsRoot"
+        },
+        {
+          "command": "trainning_extension.addFavoriteFolder",
+          "group": "navigation",
+          "when": "explorerResourceIsFolder"
+        },
+        {
+          "command": "trainning_extension.deleteModelFiles",
+          "group": "navigation",
+          "when": "explorerResourceIsFolder"
         }
       ]
     },

@@ -34,6 +34,11 @@
       "command": "trainning_extension.setSshStartCommand",
       "title": "Set SSH Startup Command",
       "icon": "$(gear)"
+    },
+    {
+      "command": "trainning_extension.editSshHost",
+      "title": "Edit in SSH Config",
+      "icon": "$(edit)"
     }
   ],
   "views": {
@@ -82,6 +87,16 @@
         "command": "trainning_extension.connectSsh",
         "when": "view == trainning_extension_ssh && viewItem == sshHost",
         "group": "inline@5"
+      },
+      {
+        "command": "trainning_extension.editSshHost",
+        "when": "view == trainning_extension_ssh && viewItem == sshHost",
+        "group": "inline@7"
+      },
+      {
+        "command": "trainning_extension.editSshHost",
+        "when": "view == trainning_extension_ssh && viewItem == sshHost",
+        "group": "navigation@3"
       },
       {
         "command": "trainning_extension.copySshIp",

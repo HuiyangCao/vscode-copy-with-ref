@@ -150,6 +150,7 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
             const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
             item.iconPath = new vscode.ThemeIcon('run');
             item.tooltip = element.command;
+            item.contextValue = 'command';
             item.command = {
                 command: `${EXTENSION_ID}.runCommand`,
                 title: 'Run Command',
@@ -205,6 +206,35 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
         }
         return [];
     }
+}
+
+/**
+ * 在 YAML 配置文本中搜索某条命令（按 name 匹配），返回其 name 行号（0-based）。
+ * 跳过注释行；name 值的引号会被去掉再比较。
+ */
+function findCommandLine(content: string, name: string): number | undefined {
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        if (trimmed.startsWith('#')) {
+            continue;
+        }
+        const m = trimmed.match(/^-?\s*name:\s*(.*)$/);
+        if (!m) {
+            continue;
+        }
+        let val = m[1].trim();
+        if (
+            (val.startsWith('"') && val.endsWith('"')) ||
+            (val.startsWith("'") && val.endsWith("'"))
+        ) {
+            val = val.slice(1, -1);
+        }
+        if (val === name) {
+            return i;
+        }
+    }
+    return undefined;
 }
 
 /**
@@ -416,6 +446,35 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
                 await vscode.window.showTextDocument(doc);
             } catch (e) {
                 vscode.window.showErrorMessage(`Failed to open config file: ${e}`);
+            }
+        }
+    ));
+
+    // 编辑单条命令：打开工程 YAML 并跳转到该命令所在行
+    disposables.push(vscode.commands.registerCommand(
+        `${EXTENSION_ID}.editCommand`,
+        async (cmdItem: CommandItemNode) => {
+            try {
+                if (!cmdItem || cmdItem.kind !== 'command') {
+                    return;
+                }
+                const fp = provider.projectFilePath;
+                if (!fp || !fs.existsSync(fp)) {
+                    vscode.window.showWarningMessage('当前工程没有命令配置文件');
+                    return;
+                }
+                const doc = await vscode.workspace.openTextDocument(fp);
+                const line = findCommandLine(doc.getText(), cmdItem.name);
+                const editor = await vscode.window.showTextDocument(doc);
+                if (line !== undefined && line >= 0 && line < doc.lineCount) {
+                    const range = doc.lineAt(line).range;
+                    editor.selection = new vscode.Selection(range.start, range.end);
+                    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+                } else {
+                    vscode.window.showWarningMessage(`未在配置中找到命令：${cmdItem.name}`);
+                }
+            } catch (e) {
+                vscode.window.showErrorMessage(`Failed to open command config: ${e}`);
             }
         }
     ));

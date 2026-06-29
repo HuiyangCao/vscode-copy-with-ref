@@ -12,6 +12,8 @@ interface SshHostNode {
     user?: string;
     port?: string;
     latency?: number | null;
+    /** 该 Host 在 ~/.ssh/config 中的行号（0-based，未注释的真实条目）。 */
+    line?: number;
 }
 
 interface SshErrorNode {
@@ -285,10 +287,10 @@ function parseSshConfig(configPath: string): SshHostNode[] {
     const hosts: SshHostNode[] = [];
     let currentHost: SshHostNode | null = null;
 
-    for (const line of lines) {
-        const trimmed = line.trim();
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
 
-        // 空行或注释行，跳过
+        // 空行或注释行，跳过（注释掉的 Host 条目不会被记录）
         if (!trimmed || trimmed.startsWith('#')) {
             continue;
         }
@@ -305,6 +307,7 @@ function parseSshConfig(configPath: string): SshHostNode[] {
             currentHost = {
                 kind: 'host',
                 host: hostName,
+                line: i,
             };
 
             // 跳过 Host * 全局配置
@@ -546,6 +549,55 @@ async function openSshConfig() {
     const uri = vscode.Uri.file(configPath);
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.window.showTextDocument(doc);
+}
+
+/**
+ * 在 SSH config 文本中搜索某个别名对应的、未注释的 Host 行，返回其行号（0-based）。
+ */
+function findHostLine(content: string, alias: string): number | undefined {
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        // 跳过空行和注释（排除注释掉的条目）
+        if (!trimmed || trimmed.startsWith('#')) {
+            continue;
+        }
+        if (!trimmed.toLowerCase().startsWith('host ')) {
+            continue;
+        }
+        const rest = trimmed.substring(5).trim();
+        if (rest === alias || rest.split(/\s+/).includes(alias)) {
+            return i;
+        }
+    }
+    return undefined;
+}
+
+/**
+ * 编辑单个 SSH 条目：打开 ~/.ssh/config 并跳转到该 Host 所在行。
+ */
+async function editSshHost(node: SshTreeNode) {
+    if (!node || node.kind !== 'host') {
+        return;
+    }
+    const configPath = path.join(os.homedir(), '.ssh', 'config');
+    const uri = vscode.Uri.file(configPath);
+    const doc = await vscode.workspace.openTextDocument(uri);
+
+    // 优先用解析时记录的行号；失效时按别名搜索（均排除注释条目）
+    let line = node.line;
+    if (line === undefined || line < 0 || line >= doc.lineCount) {
+        line = findHostLine(doc.getText(), node.host);
+    }
+
+    const editor = await vscode.window.showTextDocument(doc);
+    if (line !== undefined && line >= 0 && line < doc.lineCount) {
+        const range = doc.lineAt(line).range;
+        editor.selection = new vscode.Selection(range.start, range.end);
+        editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+    } else {
+        vscode.window.showWarningMessage(`未在 ~/.ssh/config 中找到未注释的 Host: ${node.host}`);
+    }
 }
 
 /**
@@ -1274,10 +1326,11 @@ export function registerSshServerView(context: vscode.ExtensionContext): vscode.
     const downloadCmd = vscode.commands.registerCommand(`${EXTENSION_ID}.syncDownload`, syncDownload);
     const copyIpCmd = vscode.commands.registerCommand(`${EXTENSION_ID}.copySshIp`, copySshIp);
     const setStartCmd = vscode.commands.registerCommand(`${EXTENSION_ID}.setSshStartCommand`, openSshStartCommandConfig);
+    const editHostCmd = vscode.commands.registerCommand(`${EXTENSION_ID}.editSshHost`, editSshHost);
 
     const providerDisposable = vscode.Disposable.from(
         new vscode.Disposable(() => provider.dispose())
     );
 
-    return [treeView, connectCmd, openConfigCmd, refreshCmd, uploadCmd, downloadCmd, copyIpCmd, setStartCmd, providerDisposable];
+    return [treeView, connectCmd, openConfigCmd, refreshCmd, uploadCmd, downloadCmd, copyIpCmd, setStartCmd, editHostCmd, providerDisposable];
 }

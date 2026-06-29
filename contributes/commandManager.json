@@ -23,6 +23,11 @@
       "command": "trainning_extension.deleteCommandConfig",
       "title": "Delete Command Config",
       "icon": "$(trash)"
+    },
+    {
+      "command": "trainning_extension.editCommand",
+      "title": "Edit Command",
+      "icon": "$(edit)"
     }
   ],
   "viewsContainers": {
@@ -63,6 +68,18 @@
         "command": "trainning_extension.deleteCommandConfig",
         "when": "view == trainning_extension_commands",
         "group": "navigation@4"
+      }
+    ],
+    "view/item/context": [
+      {
+        "command": "trainning_extension.editCommand",
+        "when": "view == trainning_extension_commands && viewItem == command",
+        "group": "inline@1"
+      },
+      {
+        "command": "trainning_extension.editCommand",
+        "when": "view == trainning_extension_commands && viewItem == command",
+        "group": "navigation@1"
       }
     ]
   }

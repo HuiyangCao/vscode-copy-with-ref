@@ -21,34 +21,18 @@ function loadYaml(): any {
 }
 const yaml = loadYaml();
 
-type CommandNode = GroupNode | CommandItemNode | PlaceholderNode;
-
-interface GroupNode {
-    kind: 'group';
-    name: string;
-    commands: any[];
-    docParameters: Record<string, any>;
-}
+type CommandNode = CommandItemNode | PlaceholderNode;
 
 interface CommandItemNode {
     kind: 'command';
     name: string;
     command: string;
-    parameters?: Record<string, any>;
-    docParameters: Record<string, any>;
 }
 
 interface PlaceholderNode {
     kind: 'placeholder';
     name: string;
     actionCommand?: string;
-}
-
-interface Parameter {
-    type: string;
-    prompt: string;
-    options?: string[];
-    [key: string]: any;
 }
 
 class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
@@ -112,34 +96,36 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
         this._onDidChangeTreeData.fire();
     }
 
-    private loadDoc(): any | undefined {
+    /** 读取当前工程的平铺命令列表。 */
+    private loadCommands(): CommandItemNode[] | undefined {
         const fp = this.projectFilePath;
         if (!fp || !fs.existsSync(fp)) return undefined;
         try {
-            return yaml.load(fs.readFileSync(fp, 'utf-8')) || {};
+            const config = yaml.load(fs.readFileSync(fp, 'utf-8'));
+            if (!Array.isArray(config)) {
+                throw new Error('YAML 根节点必须是命令数组');
+            }
+            return config.map((item: any, index: number) => {
+                if (
+                    typeof item?.name !== 'string' || !item.name.trim() ||
+                    typeof item?.command !== 'string' || !item.command.trim()
+                ) {
+                    throw new Error(`第 ${index + 1} 条命令必须包含非空的 name 和 command`);
+                }
+                return {
+                    kind: 'command',
+                    name: item.name,
+                    command: item.command,
+                };
+            });
         } catch (e) {
             vscode.window.showErrorMessage(`解析命令配置失败 ${path.basename(fp)}: ${e}`);
             return undefined;
         }
     }
 
-    private toCommandNode(cmd: any, docParameters: Record<string, any>): CommandItemNode {
-        return {
-            kind: 'command',
-            name: cmd?.name ?? '(未命名)',
-            command: cmd?.command ?? '',
-            parameters: cmd?.parameters,
-            docParameters,
-        };
-    }
-
     getTreeItem(element: CommandNode): vscode.TreeItem {
-        if (element.kind === 'group') {
-            const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.Expanded);
-            item.iconPath = new vscode.ThemeIcon('folder');
-            item.contextValue = 'group';
-            return item;
-        } else if (element.kind === 'placeholder') {
+        if (element.kind === 'placeholder') {
             const item = new vscode.TreeItem(element.name, vscode.TreeItemCollapsibleState.None);
             item.iconPath = new vscode.ThemeIcon('info');
             if (element.actionCommand) {
@@ -154,7 +140,7 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
             item.command = {
                 command: `${EXTENSION_ID}.runCommand`,
                 title: 'Run Command',
-                arguments: [this.projectName, element],
+                arguments: [element],
             };
             return item;
         }
@@ -175,34 +161,18 @@ class CommandManagerProvider implements vscode.TreeDataProvider<CommandNode> {
                 }];
             }
 
-            const doc = this.loadDoc() || {};
-            const docParams: Record<string, any> = doc.parameters || {};
-            const nodes: CommandNode[] = [];
-
-            // 顶层未分组命令
-            for (const cmd of (doc.commands || [])) {
-                nodes.push(this.toCommandNode(cmd, docParams));
+            const commands = this.loadCommands();
+            if (!commands) {
+                return [];
             }
-            // 分组
-            for (const g of (doc.groups || [])) {
-                nodes.push({
-                    kind: 'group',
-                    name: g?.name ?? '(未命名分组)',
-                    commands: g?.commands || [],
-                    docParameters: docParams,
-                });
-            }
-
-            if (nodes.length === 0) {
+            if (commands.length === 0) {
                 return [{
                     kind: 'placeholder',
                     name: '配置为空，点击编辑',
                     actionCommand: `${EXTENSION_ID}.openCommandConfig`,
                 }];
             }
-            return nodes;
-        } else if (element.kind === 'group') {
-            return element.commands.map((cmd) => this.toCommandNode(cmd, element.docParameters));
+            return commands;
         }
         return [];
     }
@@ -238,111 +208,10 @@ function findCommandLine(content: string, name: string): number | undefined {
 }
 
 /**
- * 从命令字符串中扫描 {paramName} 占位符，提取参数名列表。
- * 转义的 \{...\} 不会被提取。
+ * 去掉 YAML 块标量带来的尾部空白，避免向终端多发送一个回车。
  */
-function extractParamNames(command: string): string[] {
-    const names: string[] = [];
-    const seen = new Set<string>();
-    // 匹配 {name}，但排除前面有 \ 的转义
-    const regex = /(?<!\\)\{(\w+)\}/g;
-    let match;
-    while ((match = regex.exec(command)) !== null) {
-        const name = match[1];
-        if (!seen.has(name)) {
-            seen.add(name);
-            names.push(name);
-        }
-    }
-    return names;
-}
-
-async function collectParameters(
-    cmdItem: CommandItemNode,
-    context: vscode.ExtensionContext,
-    projectName: string
-): Promise<Record<string, string> | undefined> {
-    const result: Record<string, string> = {};
-
-    // 合并参数定义：工程级 parameters + 命令内联 parameters
-    const paramDefs: Record<string, Parameter> = {
-        ...(cmdItem.docParameters || {}),
-        ...(cmdItem.parameters || {}),
-    };
-
-    // 从命令字符串中自动扫描需要的参数
-    const paramNames = extractParamNames(cmdItem.command);
-
-    for (const paramName of paramNames) {
-        const paramDef = paramDefs[paramName];
-        if (!paramDef) {
-            vscode.window.showWarningMessage(`Parameter '${paramName}' not found in definitions`);
-            continue;
-        }
-
-        const stateKey = `cmdmgr.${projectName}.${paramName}`;
-        const lastValue = context.workspaceState.get<string>(stateKey);
-
-        let value: string | undefined;
-
-        if (paramDef.type === 'select' && paramDef.options) {
-            const options = paramDef.options;
-            const items = options.map((opt: string) => ({
-                label: opt,
-                picked: opt === lastValue,
-            }));
-
-            const selected = await vscode.window.showQuickPick(items, {
-                placeHolder: paramDef.prompt,
-                ignoreFocusOut: true,
-            });
-
-            if (!selected) {
-                return undefined;
-            }
-            value = selected.label;
-        } else if (paramDef.type === 'string') {
-            const input = await vscode.window.showInputBox({
-                prompt: paramDef.prompt,
-                value: lastValue,
-                ignoreFocusOut: true,
-            });
-
-            if (input === undefined) {
-                return undefined;
-            }
-            value = input;
-        } else {
-            vscode.window.showWarningMessage(
-                `Unknown parameter type '${paramDef.type}' for '${paramName}'`
-            );
-            continue;
-        }
-
-        await context.workspaceState.update(stateKey, value);
-        result[paramName] = value!;
-    }
-
-    return result;
-}
-
-/**
- * 构建最终发送到终端的命令文本。
- * - 普通参数：直接替换值
- * - 转义 \{...\} 还原为字面量 {...}
- */
-function buildTerminalCommand(command: string, params: Record<string, string>): string {
-    let finalCmd = command;
-
-    for (const [key, value] of Object.entries(params)) {
-        finalCmd = finalCmd.replace(new RegExp(`(?<!\\\\)\\{${key}\\}`, 'g'), value);
-    }
-
-    // 还原转义的 \{...\} 为字面量 {...}
-    finalCmd = finalCmd.replace(/\\\{/g, '{').replace(/\\\}/g, '}');
-
-    // 去掉 YAML 块标量带来的尾部空行，避免多发一个回车
-    return finalCmd.replace(/\s+$/, '');
+function trimCommand(command: string): string {
+    return command.replace(/\s+$/, '');
 }
 
 function getOrCreateRunTerminal(name: string): vscode.Terminal {
@@ -362,10 +231,9 @@ function getOrCreateRunTerminal(name: string): vscode.Terminal {
 function readTemplate(extensionPath: string): string {
     const templatePath = path.join(extensionPath, 'other_files', 'template_commands.yaml');
     const minimalFallback = [
-        '# 本工程命令配置（YAML，支持多行命令与注释）',
-        'parameters: {}',
-        'commands: []',
-        'groups: []',
+        '# 每条命令只包含 name 和 command',
+        '- name: NVIDIA SMI',
+        '  command: nvidia-smi',
         '',
     ].join('\n');
 
@@ -376,7 +244,7 @@ function readTemplate(extensionPath: string): string {
             yaml.load(content);
         } catch (e) {
             vscode.window.showWarningMessage(
-                `template_commands.yaml 不是合法 YAML (${e})，已创建空配置。`
+                `template_commands.yaml 不是合法 YAML (${e})，已创建默认配置。`
             );
             content = minimalFallback;
         }
@@ -393,7 +261,6 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
     const provider = new CommandManagerProvider();
     const treeView = vscode.window.createTreeView(`${EXTENSION_ID}_commands`, {
         treeDataProvider: provider,
-        showCollapseAll: true,
     });
     disposables.push(treeView);
 
@@ -405,17 +272,9 @@ export function registerCommandManagerView(context: vscode.ExtensionContext): vs
     // 运行命令
     disposables.push(vscode.commands.registerCommand(
         `${EXTENSION_ID}.runCommand`,
-        async (projectName: string | undefined, cmdItem: CommandItemNode) => {
+        (cmdItem: CommandItemNode) => {
             try {
-                if (!projectName) {
-                    vscode.window.showErrorMessage('未打开工作区文件夹');
-                    return;
-                }
-                const params = await collectParameters(cmdItem, context, projectName);
-                if (params === undefined) {
-                    return; // 用户取消
-                }
-                const finalCmd = buildTerminalCommand(cmdItem.command, params);
+                const finalCmd = trimCommand(cmdItem.command);
                 if (!finalCmd) {
                     return;
                 }

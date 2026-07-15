@@ -35,7 +35,7 @@ interface RunDirectoryNode {
     parent: RunFolderNode | RunDirectoryNode;
 }
 
-/** 运行文件夹内的具体文件（onnx 或 pt） */
+/** 运行文件夹内的具体文件（神经网络模型文件，如 pt/onnx/torchscript） */
 interface RunFileNode {
     kind: 'runFile';
     name: string;
@@ -104,42 +104,20 @@ function parseTimeFromName(name: string): number {
     ).getTime();
 }
 
-/**
- * 在目录中找到编号最大的 model_*.pt 文件。
- * 返回 { name, fullPath, size } 或 null。
- */
-function findLargestModelPt(dirPath: string): { name: string; fullPath: string; size: number } | null {
-    let entries: fs.Dirent[];
-    try {
-        entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    } catch {
-        return null;
-    }
+/** 常见神经网络模型文件扩展名（小写，含点）。 */
+const MODEL_FILE_EXTENSIONS = new Set([
+    '.pt', '.pth',                                  // PyTorch 权重 / TorchScript
+    '.onnx',                                        // ONNX
+    '.ts', '.torchscript', '.jit', '.ptc', '.pt2', // TorchScript / 编译产物
+    '.safetensors', '.ckpt', '.bin',               // 通用权重
+    '.pb', '.h5', '.keras', '.tflite',             // TensorFlow / Keras
+    '.engine', '.plan', '.trt',                    // TensorRT
+    '.gguf', '.mlmodel',                           // llama.cpp / CoreML
+]);
 
-    let bestNum = -1;
-    let bestName = '';
-
-    for (const e of entries) {
-        if (!e.isFile()) continue;
-        const m = e.name.match(/^model_(\d+)\.pt$/);
-        if (m) {
-            const num = parseInt(m[1], 10);
-            if (num > bestNum) {
-                bestNum = num;
-                bestName = e.name;
-            }
-        }
-    }
-
-    if (bestNum < 0) return null;
-
-    const fullPath = path.join(dirPath, bestName);
-    try {
-        const stat = fs.statSync(fullPath);
-        return { name: bestName, fullPath, size: stat.size };
-    } catch {
-        return null;
-    }
+/** 判断文件是否为常见神经网络模型文件。 */
+function isModelFile(name: string): boolean {
+    return MODEL_FILE_EXTENSIONS.has(path.extname(name).toLowerCase());
 }
 
 function createFileNode(
@@ -186,8 +164,6 @@ function buildRunChildren(
     }
 
     const children: RunChildNode[] = [];
-    const bestPt = findLargestModelPt(dirPath);
-    const bestPtPath = bestPt?.fullPath;
 
     for (const e of entries) {
         const fullPath = path.join(dirPath, e.name);
@@ -201,15 +177,15 @@ function buildRunChildren(
                 parent,
             };
             dirNode.children = buildRunChildren(fullPath, dirNode, depth + 1, maxDepth);
-            children.push(dirNode);
+            // 剪掉不含任何模型文件的空目录，保持视图整洁
+            if (dirNode.children.length > 0) children.push(dirNode);
             continue;
         }
 
         if (!e.isFile()) continue;
 
-        if (/^model_\d+\.pt$/.test(e.name) && fullPath !== bestPtPath) {
-            continue;
-        }
+        // 只保留常见神经网络模型文件；.pt 不再按序号过滤，全部展示
+        if (!isModelFile(e.name)) continue;
 
         const fileNode = createFileNode(parent, fullPath, e.name);
         if (fileNode) children.push(fileNode);
@@ -221,13 +197,11 @@ function buildRunChildren(
 /**
  * 判断一个目录是否为「训练运行文件夹」。
  * 条件：文件夹名匹配日期格式 YYYY-MM-DD_HH-MM-SS，
- *       且包含 .onnx 或 model_*.pt 文件。
+ *       且（顶层）包含至少一个神经网络模型文件。
  */
 function isRunFolder(dirName: string, entries: fs.Dirent[]): boolean {
     if (!parseTimeFromName(dirName)) return false;
-    return entries.some(e =>
-        e.isFile() && (e.name.endsWith('.onnx') || /^model_\d+\.pt$/.test(e.name))
-    );
+    return entries.some(e => e.isFile() && isModelFile(e.name));
 }
 
 /**
